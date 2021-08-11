@@ -85,3 +85,14 @@ func (s *store) Read(pos uint64) ([]byte, error) {
 
 	return b, nil
 }
+
+// implement io.ReadAt function on store type
+func (s *store) ReadAt(p []byte, offset int64) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.buf.Flush(); err != nil {
+		return 0, err
+	}
+	return s.File.ReadAt(p, offset)
+}
