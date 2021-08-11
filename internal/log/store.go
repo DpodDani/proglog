@@ -96,3 +96,15 @@ func (s *store) ReadAt(p []byte, offset int64) (int, error) {
 	}
 	return s.File.ReadAt(p, offset)
 }
+
+// persist any buffered data before closing the file
+func (s *store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.buf.Flush(); err != nil {
+		return err
+	}
+
+	return s.File.Close()
+}
