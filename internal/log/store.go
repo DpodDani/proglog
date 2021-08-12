@@ -46,6 +46,8 @@ func (s *store) Append(p []byte) (n uint64, pos uint64, err error) {
 	pos = s.size
 	// write length of record to file
 	// so when we read record, we know how many bytes to read
+	// binary.Write --> writes binary representation of record length
+	// into buffer
 	if err := binary.Write(s.buf, enc, uint64(len(p))); err != nil {
 		return 0, 0, err
 	}
