@@ -100,7 +100,7 @@ func (i *index) Read(in int64) (out uint32, pos uint64, err error) {
 	}
 
 	out = enc.Uint32(i.mmap[pos : pos+offWidth])
-	pos = env.Uint64(i.mmap[pos+offWidth : pos+entWidth])
+	pos = enc.Uint64(i.mmap[pos+offWidth : pos+entWidth])
 	return out, pos, nil
 }
 
