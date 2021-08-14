@@ -1,6 +1,7 @@
 package log
 
 import (
+	"io"
 	"os"
 
 	"github.com/tysontate/gommap"
@@ -73,4 +74,32 @@ func (i *index) Close() error {
 	}
 
 	return i.file.Close()
+}
+
+// in --> offset (relative to Segment's base offset)
+// 0 = offset of index's first entry; 1 = second entry etc.
+// Relative offset values allow us to store as uint32
+// Absolute offset values would have to be stored as uint64,
+// thereby taking up 4 more bytes for each entry,
+// because 32 extra bits = 4 extra bytes
+func (i *index) Read(in int64) (out uint32, pos uint64, err error) {
+	if i.size == 0 {
+		return 0, 0, io.EOF
+	}
+
+	// When in == -1, we want to return the last entry
+	if in == -1 {
+		out = uint32((i.size / entWidth) - 1)
+	} else {
+		out = uint32(in)
+	}
+
+	pos = uint64(out) * entWidth
+	if i.size < pos+entWidth {
+		return 0, 0, io.EOF
+	}
+
+	out = enc.Uint32(i.mmap[pos : pos+offWidth])
+	pos = env.Uint64(i.mmap[pos+offWidth : pos+entWidth])
+	return out, pos, nil
 }
