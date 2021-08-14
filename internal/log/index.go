@@ -68,7 +68,7 @@ func (i *index) Close() error {
 	//
 	// This enables the service to find the last index entry and determine
 	// the next offset.
-	if err = i.file.Truncate(int64(i.size)); err != nil {
+	if err := i.file.Truncate(int64(i.size)); err != nil {
 		return err
 	}
 
