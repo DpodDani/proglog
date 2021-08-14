@@ -16,7 +16,7 @@ func TestIndex(t *testing.T) {
 
 	var c Config = Config{}
 	c.Segment.MaxIndexBytes = 1024
-	idx, err := NewIndex(f, c)
+	idx, err := newIndex(f, c)
 	require.NoError(t, err)
 
 	// check that io.EOF is returned when reading empty index
