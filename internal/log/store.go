@@ -80,6 +80,7 @@ func (s *store) Read(pos uint64) ([]byte, error) {
 	}
 
 	// use size variable to init buffer for record itself!
+	// I think enc.Uint64 parses the binary value "size" into a decimal number
 	b := make([]byte, enc.Uint64(size))
 	if _, err := s.File.ReadAt(b, int64(pos+lenWidth)); err != nil {
 		return nil, err
