@@ -32,7 +32,8 @@ func newIndex(f *os.File, c Config) (*index, error) {
 	idx.size = uint64(fi.Size())
 	// Truncate() either removes excess data from the file,
 	// or fills it with null characters so that file size matches
-	// value in 2nd argument.
+	// value in 2nd argument. In this context, we are padding the file with
+	// null characters, since this is a constructor.
 	//
 	// This is because the file cannot grow after it has been memory-mapped,
 	// so better to do it at the beginning.
