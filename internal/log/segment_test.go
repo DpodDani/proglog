@@ -28,16 +28,15 @@ func TestSegment(t *testing.T) {
 		fmt.Sprintf("Offset should be: %d", s.nextOffset))
 	require.False(t, s.IsMaxed())
 
-	for i := uint64(1); i < 3; i++ {
+	for i := uint64(0); i < 3; i++ {
 		off, err := s.Append(want)
 		require.NoError(t, err)
 		require.Equal(t, 16+i, off)
 		require.Equal(t, s.nextOffset, 16+i+1)
 
 		got, err := s.Read(off)
-		require.NoError(err)
-		require.Equal(t, got, want)
-		require.Equal(t, got.Value, want.Value)
+		require.NoError(t, err)
+		require.Equal(t, want.Value, got.Value)
 	}
 
 	// max index
@@ -50,7 +49,7 @@ func TestSegment(t *testing.T) {
 	c.Segment.MaxIndexBytes = 1024
 	s, err = newSegment(dir, 16, c)
 	require.NoError(t, err)
-	require.True(t, IsMaxed())
+	require.True(t, s.IsMaxed())
 
 	err = s.Remove()
 	require.NoError(t, err)

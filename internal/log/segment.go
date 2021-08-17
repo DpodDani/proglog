@@ -10,22 +10,22 @@ import (
 )
 
 type segment struct {
-	store *store
-	index *index
+	store                  *store
+	index                  *index
 	baseOffset, nextOffset uint64
-	config Config
+	config                 Config
 }
 
 func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
 	s := &segment{
 		baseOffset: baseOffset,
-		config: c
+		config:     c,
 	}
 
 	var err error
 	storeFile, err := os.OpenFile(
 		path.Join(dir, fmt.Sprintf("%d%s", baseOffset, ".store")),
-		os.O_RDRW|os.O_CREATE|os.O_APPEND,
+		os.O_RDWR|os.O_CREATE|os.O_APPEND,
 		0644,
 	)
 
@@ -39,7 +39,7 @@ func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
 
 	indexFile, err := os.OpenFile(
 		path.Join(dir, fmt.Sprintf("%d%s", baseOffset, ".index")),
-		os.O_RDRW|os.O_CREATE,
+		os.O_RDWR|os.O_CREATE,
 		0644,
 	)
 
@@ -61,7 +61,7 @@ func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
 }
 
 // api.Record --> struct created by the Protobuf compiler
-func (s *segment) Append(record *api.Record) (offset uint64 err error) {
+func (s *segment) Append(record *api.Record) (offset uint64, err error) {
 	cur := s.nextOffset
 	record.Offset = cur
 
@@ -76,8 +76,8 @@ func (s *segment) Append(record *api.Record) (offset uint64 err error) {
 	}
 
 	if err = s.index.Write(
-		uint32(s.nextOffset - s.baseOffset), // get offset relative to baseOffset
-		pos
+		uint32(s.nextOffset-s.baseOffset), // get offset relative to baseOffset
+		pos,
 	); err != nil {
 		return 0, err
 	}
@@ -104,7 +104,7 @@ func (s *segment) Read(off uint64) (*api.Record, error) {
 
 func (s *segment) IsMaxed() bool {
 	return s.store.size >= s.config.Segment.MaxStoreBytes ||
-			s.index.size >= s.config.Segment.MaxIndexBytes
+		s.index.size >= s.config.Segment.MaxIndexBytes
 }
 
 func (s *segment) Remove() error {
