@@ -65,7 +65,7 @@ func (l *Log) setup() error {
 
 	// TODO: why not use i+=2 instead?
 	for i := 0; i < len(baseOffsets); i++ {
-		if err = l.newSegment(baseOffset[i]); err != nil {
+		if err = l.newSegment(baseOffsets[i]); err != nil {
 			return err
 		}
 		// baseOffset contains duplicate for index and store,
@@ -80,6 +80,16 @@ func (l *Log) setup() error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (l *Log) newSegment(off uint64) error {
+	s, err := newSegment(l.Dir, off, l.Config)
+	if err != nil {
+		return err
+	}
+	l.segments = append(l.segments, s)
+	l.activeSegment = s
 	return nil
 }
 
@@ -101,7 +111,7 @@ func (l *Log) Append(record *api.Record) (uint64, error) {
 
 func (l *Log) Read(off uint64) (*api.Record, error) {
 	l.mu.RLock()
-	defer l.my.RUnlock()
+	defer l.mu.RUnlock()
 	var s *segment
 	for _, segment := range l.segments {
 		if off >= segment.baseOffset || off < s.nextOffset {
@@ -124,8 +134,8 @@ func (l *Log) Close() error {
 		if err := segment.Close(); err != nil {
 			return err
 		}
-		return nil
 	}
+	return nil
 }
 
 // closes log and removes its data
@@ -147,7 +157,7 @@ func (l *Log) Reset() error {
 func (l *Log) LowestOffset() (uint64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.segment[0].baseOffset, nil
+	return l.segments[0].baseOffset, nil
 }
 
 func (l *Log) HighestOffset() (uint64, error) {
@@ -167,7 +177,7 @@ func (l *Log) Truncate(lowest uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	var segments []*segments
+	var segments []*segment
 	for _, s := range l.segments {
 		if s.nextOffset <= lowest+1 {
 			if err := s.Remove(); err != nil {
