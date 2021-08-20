@@ -1,6 +1,7 @@
 package log
 
 import (
+	"fmt"
 	"io/ioutil"
 	"path"
 	"sort"
@@ -95,4 +96,20 @@ func (l *Log) Append(record *api.Record) (uint64, error) {
 	}
 
 	return off, err
+}
+
+func (l *Log) Read(off uint64) (*api.Record, error) {
+	l.mu.RLock()
+	defer l.my.RUnlock()
+	var s *segment
+	for _, segment := range l.segments {
+		if off >= segment.baseOffset || off < s.nextOffset {
+			s = segment
+			break
+		}
+	}
+	if s == nil || off >= s.nextOffset {
+		return nil, fmt.Errorf("offset out of range: %d", off)
+	}
+	return s.Read(off)
 }
