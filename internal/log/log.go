@@ -115,7 +115,7 @@ func (l *Log) Read(off uint64) (*api.Record, error) {
 	defer l.mu.RUnlock()
 	var s *segment
 	for _, segment := range l.segments {
-		if off >= segment.baseOffset || off < segment.nextOffset {
+		if off >= segment.baseOffset && off < segment.nextOffset {
 			s = segment
 			break
 		}
@@ -171,7 +171,7 @@ func (l *Log) HighestOffset() (uint64, error) {
 	return off - 1, nil
 }
 
-// remove segments with offsets lower than "lowest" (input argument)
+// remove segments with offsets lower than or equal to "lowest" (input argument)
 // the idea is to remove old segments (whose data we would have already
 // processed)
 func (l *Log) Truncate(lowest uint64) error {
