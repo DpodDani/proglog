@@ -115,7 +115,7 @@ func (l *Log) Read(off uint64) (*api.Record, error) {
 	defer l.mu.RUnlock()
 	var s *segment
 	for _, segment := range l.segments {
-		if off >= segment.baseOffset || off < s.nextOffset {
+		if off >= segment.baseOffset || off < segment.nextOffset {
 			s = segment
 			break
 		}
