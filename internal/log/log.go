@@ -2,6 +2,7 @@ package log
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -189,4 +190,39 @@ func (l *Log) Truncate(lowest uint64) error {
 	}
 	l.segments = segments
 	return nil
+}
+
+// this struct is used to ensure two things:
+// 1) to satisfy the io.Reader interface (by implementing the Read() function)
+// 2) to ensure we begin reading store, for each segment, from the beginning,
+// and therefore read its entire file
+type originReader struct {
+	*store
+	off int64 // zero value is 0
+}
+
+func (o *originReader) Read(p []byte) (int, error) {
+	// using ReadAt function from the store struct
+	// store is a "promoted field" in the originReader struct,
+	// therefore the ReadAt() function call "passes through" to the
+	// store (the promoted anonymous field)
+	// ref: https://stackoverflow.com/a/58119914
+	n, err := o.ReadAt(p, o.off)
+	o.off += int64(n)
+	return n, err
+}
+
+// returns an io.Reader for reading the whole log
+// this functionality will be used later to support snapshots and restoring
+// a log
+func (l *Log) Reader() io.Reader {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	readers := make([]io.Reader, len(l.segments))
+	for i, segment := range l.segments {
+		readers[i] = &originReader{segment.store, 0}
+	}
+	// io.MultiReader concanates segments' store
+	return io.MultiReader(readers...)
 }
