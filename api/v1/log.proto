@@ -8,3 +8,29 @@ message Record {
     bytes value = 1;
     uint64 offset = 2;
 }
+
+service Log {
+    rpc Produce(ProduceRequest) returns (ProduceResponse) {}
+    rpc Consume(ConsumeRequest) returns (ConsumeResponse) {}
+    // server-side streaming where client sends request to server
+    // and gets back stream of data
+    rpc ConsumeStream(ConsumeRequest) returns (stream ConsumeResponse) {}
+    // bidirectional streaming where client and server send sequence of messages
+    rpc ProduceStream(stream ProduceRequest) returns (stream ProduceResponse) {}
+}
+
+message ProduceRequest {
+    Record record = 1;
+}
+
+message ProduceResponse {
+    uint64 offset = 1;
+}
+
+message ConsumeRequest {
+    uint64 offset = 1;
+}
+
+message ConsumeResponse {
+    Record record = 2;
+}
