@@ -69,3 +69,30 @@ func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 		}
 	}
 }
+
+func (s *grpcServer) ConsumeStream(
+	req *ConsumeRequest,
+	stream api.Log_ConsumeStreamServer,
+) error {
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		default:
+			res, err := s.Consume(stream.Context(), req)
+			switch err.(type) {
+			case nil:
+			case api.ErrOffsetOutOfRange:
+				continue
+			default:
+				return err
+			}
+			// server-side handler can send stream of protobuf messages to
+			// the client through Send() method
+			if err = stream.Send(res); err != nil {
+				return err
+			}
+			req.Offset++
+		}
+	}
+}
