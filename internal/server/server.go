@@ -56,6 +56,10 @@ func (s *grpcServer) Consume(ctx context.Context, req *api.ConsumeRequest) (
 
 func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 	for {
+		// server-side handler can repeatedly call Recv() to read the
+		// client-to-server message stream.
+		// Recv() returns (nil, io.EOF) once it has reached the end of the
+		// stream
 		req, err := stream.Recv()
 		if err != nil {
 			return err
@@ -64,6 +68,8 @@ func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 		if err != nil {
 			return err
 		}
+		// response server-to-client message stream is sent by repeatedly
+		// calling the Send() method
 		if err = stream.Send(res); err != nil {
 			return err
 		}
