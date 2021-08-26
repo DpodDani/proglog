@@ -6,6 +6,8 @@ import (
 	api "github.com/DpodDani/proglog/api/v1"
 )
 
+// have service depend on an interface rather than a concrete implementation
+// a.k.a dependency inversion
 type CommitLog interface {
 	Append(*api.Record) (uint64, error)
 	Read(uint64) (*api.Record, error)
