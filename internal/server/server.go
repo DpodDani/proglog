@@ -4,6 +4,7 @@ import (
 	"context"
 
 	api "github.com/DpodDani/proglog/api/v1"
+	"google.golang.org/grpc"
 )
 
 // have service depend on an interface rather than a concrete implementation
@@ -24,6 +25,23 @@ type Config struct {
 // in the form: (dynamic type, value)
 // re: https://stackoverflow.com/a/30162432
 var _ api.LogServer = (*grpcServer)(nil)
+
+// instantiates a gRPC server, creates our service, then registers our service
+// with the server
+// gives user a server that just needs a listener for it to accept incoming
+// connections
+func NewGRPCServer(config *Config) (*grpc.Server, error) {
+	// gRPC server will listen on network, handle requests, call our server,
+	// and respond to client with the result
+	gsrv := grpc.NewServer()
+	srv, err := newgrpcServer(config)
+	if err != nil {
+		return nil, err
+	}
+	// register our service with the gRPC server
+	api.RegisterLogServer(gsrv, srv)
+	return gsrv, nil
+}
 
 type grpcServer struct {
 	// embed struct with unimplemented RPC methods
