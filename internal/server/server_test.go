@@ -38,6 +38,7 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	t.Helper()
 
 	// create a server
+	// :0 --> automatically assigns us a free port
 	l, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 
@@ -68,8 +69,11 @@ func setupTest(t *testing.T, fn func(*Config)) (
 	server, err := NewGRPCServer(cfg)
 	require.NoError(t, err)
 
+	// start serving requests in goroutine
+	// Serve is a blocking function, therefore by running it in a goroutine
+	// the rest of this function can be run to completion
 	go func() {
-		server.Server(l)
+		server.Serve(l)
 	}()
 
 	client = api.NewLogClient(cc)
