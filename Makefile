@@ -1,3 +1,4 @@
+# indicate where we want to put the generated certificates
 CONFIG_PATH=${HOME}/.proglog/
 
 .PHONY: init
@@ -7,7 +8,7 @@ init:
 .PHONY: gencert
 gencert:
 	cfssl gencert \
-		-initca test/ca-csr.json | cfssljson -bare -ca
+		-initca test/ca-csr.json | cfssljson -bare ca
 
 	cfssl gencert \
 		-ca=ca.pem \
