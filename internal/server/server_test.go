@@ -115,3 +115,35 @@ func testProduceConsume(t *testing.T, client api.LogClient, cfg *Config) {
 	// the segment.Append() func sets the record's Offset
 	require.Equal(t, want.Offset, consume.Record.Offset)
 }
+
+func testConsumePastBoundary(t *testing.T, client api.LogClient, cfg *Config) {
+	ctx := context.Background()
+
+	produce, err := client.Produce(
+		ctx,
+		&api.ProduceRequest{
+			Record: &api.Record{
+				Value: []byte("hello world"),
+			},
+		}
+	)
+
+	require.NoError(t, err)
+
+	consume, err := client.Consumer(
+		ctx,
+		&api.ConsumeRequest{
+			Offset: produce.Offset + 1,
+		},
+	)
+
+	if consume != nil {
+		t.Fatal("consume not nil (when expected)")
+	}
+
+	got := grpc.Code(err)
+	want := grpc.Code(api.ErrOffsetOutOfRange{}.GRPCStatus().Err())
+	if got != want {
+		t.Fatal("got err: %v, want: %v", got, want)
+	}
+}
