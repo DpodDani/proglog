@@ -97,7 +97,7 @@ func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
 }
 
 func (s *grpcServer) ConsumeStream(
-	req *ConsumeRequest,
+	req *api.ConsumeRequest,
 	stream api.Log_ConsumeStreamServer,
 ) error {
 	for {

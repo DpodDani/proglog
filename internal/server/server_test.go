@@ -6,6 +6,7 @@ import (
 	"net"
 	"testing"
 
+	api "github.com/DpodDani/proglog/api/v1"
 	"github.com/DpodDani/proglog/internal/log"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -125,12 +126,12 @@ func testConsumePastBoundary(t *testing.T, client api.LogClient, cfg *Config) {
 			Record: &api.Record{
 				Value: []byte("hello world"),
 			},
-		}
+		},
 	)
 
 	require.NoError(t, err)
 
-	consume, err := client.Consumer(
+	consume, err := client.Consume(
 		ctx,
 		&api.ConsumeRequest{
 			Offset: produce.Offset + 1,
@@ -144,6 +145,64 @@ func testConsumePastBoundary(t *testing.T, client api.LogClient, cfg *Config) {
 	got := grpc.Code(err)
 	want := grpc.Code(api.ErrOffsetOutOfRange{}.GRPCStatus().Err())
 	if got != want {
-		t.Fatal("got err: %v, want: %v", got, want)
+		t.Fatalf("got err: %v, want: %v", got, want)
+	}
+}
+
+func testProduceConsumeStream(
+	t *testing.T,
+	client api.LogClient,
+	cfg *Config,
+) {
+	ctx := context.Background()
+
+	records := []*api.Record{
+		{
+			Value:  []byte("first message"),
+			Offset: 0,
+		},
+		{
+			Value:  []byte("second message"),
+			Offset: 1,
+		},
+	}
+
+	{
+		stream, err := client.ProduceStream(ctx)
+		require.NoError(t, err)
+
+		for offset, record := range records {
+			err = stream.Send(&api.ProduceRequest{
+				Record: record,
+			})
+			require.NoError(t, err)
+
+			res, err := stream.Recv()
+			require.NoError(t, err)
+			if res.Offset != uint64(offset) {
+				t.Fatalf(
+					"got offset: %d, want: %d",
+					res.Offset,
+					offset,
+				)
+			}
+		}
+	}
+
+	{
+		stream, err := client.ConsumeStream(
+			ctx,
+			&api.ConsumeRequest{Offset: 0},
+		)
+		require.NoError(t, err)
+
+		for i, record := range records {
+			res, err := stream.Recv()
+			require.NoError(t, err)
+			require.Equal(t, res.Record, &api.Record{
+				Value:  record.Value,
+				Offset: uint64(i),
+			})
+		}
 	}
 }
