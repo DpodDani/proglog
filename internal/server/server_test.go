@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	api "github.com/DpodDani/proglog/api/v1"
+	"github.com/DpodDani/proglog/internal/config"
 	"github.com/DpodDani/proglog/internal/log"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 func TestServer(t *testing.T) {
@@ -41,25 +43,43 @@ func setupTest(t *testing.T, fn func(*Config)) (
 
 	// create a server
 	// :0 --> automatically assigns us a free port
-	l, err := net.Listen("tcp", ":0")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	// contains connection configuration info.
-	// clientOptions --> a slice containing grpc.DialOption objects
-	// WithInsecure --> disables transport security for the connection
-	clientOptions := []grpc.DialOption{grpc.WithInsecure()}
-	// creates client connection to l.Addr()
-	cc, err := grpc.Dial(l.Addr().String(), clientOptions...)
+	// configure client's TLS credentials to use our CA as the root CA (the
+	// CA it will use to verify the server)
+	clientTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
+		CAFile: config.CAFile,
+	})
 	require.NoError(t, err)
+
+	// use the TLS credentials defined above for the connection to listener
+	clientCreds := credentials.NewTLS(clientTLSConfig)
+	cc, err := grpc.Dial(
+		l.Addr().String(),
+		grpc.WithTransportCredentials(clientCreds),
+	)
+	require.NoError(t, err)
+
+	client = api.NewLogClient(cc)
+
+	// parse server's certificate and private key to configure TLS
+	// credentials for server
+	serverTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
+		CertFile:      config.ServerCertficiate,
+		KeyFile:       config.ServerKeyFile,
+		CAFile:        config.CAFile,
+		ServerAddress: l.Addr().String(),
+	})
+	require.NoError(t, err)
+	serverCreds := credentials.NewTLS(serverTLSConfig)
 
 	dir, err := ioutil.TempDir("", "server-test")
 	require.NoError(t, err)
 
-	// accessing function/struct from log package
 	clog, err := log.NewLog(dir, log.Config{})
 	require.NoError(t, err)
 
-	// using the Config struct in the server package this time!
 	cfg = &Config{
 		CommitLog: clog,
 	}
@@ -68,23 +88,17 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		fn(cfg)
 	}
 
-	server, err := NewGRPCServer(cfg)
+	server, err := NewGRPCServer(cfg, grpc.Creds(serverCreds))
 	require.NoError(t, err)
 
-	// start serving requests in goroutine
-	// Serve is a blocking function, therefore by running it in a goroutine
-	// the rest of this function can be run to completion
 	go func() {
 		server.Serve(l)
 	}()
-
-	client = api.NewLogClient(cc)
 
 	return client, cfg, func() {
 		server.Stop()
 		cc.Close()
 		l.Close()
-		clog.Remove()
 	}
 }
 
