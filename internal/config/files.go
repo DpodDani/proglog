@@ -6,11 +6,11 @@ import (
 )
 
 var (
-	CAFile            = configFile("ca.pem")
-	ServerCertficiate = configFile("server.pem")
-	ServerKeyFile     = configFile("server-key.pem") // server private key
-	ClientCertificate = configFile("client.pem")
-	ClientKeyFile     = configFile("client-key.pem") // client private key
+	CAFile         = configFile("ca.pem")
+	ServerCertFile = configFile("server.pem")
+	ServerKeyFile  = configFile("server-key.pem") // server private key
+	ClientCertFile = configFile("client.pem")
+	ClientKeyFile  = configFile("client-key.pem") // client private key
 )
 
 func configFile(filename string) string {
