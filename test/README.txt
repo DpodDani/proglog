@@ -13,3 +13,8 @@ client certificates.
 
 The server-csr.json file is used to configure our server's certificate.
 For example, indicating which domain names the certificate should be valid for.
+
+The client-csr.json file is used to configure our client's certificate.
+The CN field is especially important here because that the client's identity
+(almost like their username).
+This is the identity that we'll store their permissions under for authorisation.
