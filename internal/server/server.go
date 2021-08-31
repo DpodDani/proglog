@@ -4,7 +4,13 @@ import (
 	"context"
 
 	api "github.com/DpodDani/proglog/api/v1"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // have service depend on an interface rather than a concrete implementation
@@ -14,9 +20,21 @@ type CommitLog interface {
 	Read(uint64) (*api.Record, error)
 }
 
-type Config struct {
-	CommitLog CommitLog
+type Authorizer interface {
+	Authorize(subject, object, action string) error
 }
+
+type Config struct {
+	CommitLog  CommitLog
+	Authorizer Authorizer
+}
+
+// these constants match the values in our policy.csv file
+const (
+	objectWildcard = "*"
+	produceAction  = "produce"
+	consumeAction  = "consume"
+)
 
 // provides static (compile-time) check that grpcServer satisfies the LogServer
 // interface (re: https://stackoverflow.com/a/13194635)
@@ -33,6 +51,22 @@ var _ api.LogServer = (*grpcServer)(nil)
 func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (
 	*grpc.Server, error,
 ) {
+	// hook up the authenticate interceptor to our gRPC server, so that our
+	// server identifies the subject of each RPC call and kick off the
+	// authorisation process
+	opts = append(opts,
+		grpc.StreamInterceptor(
+			grpc_middleware.ChainStreamServer(
+				grpc_auth.StreamServerInterceptor(authenticate),
+			),
+		),
+		grpc.UnaryInterceptor(
+			grpc_middleware.ChainUnaryServer(
+				grpc_auth.UnaryServerInterceptor(authenticate),
+			),
+		),
+	)
+
 	// gRPC server will listen on network, handle requests, call our server,
 	// and respond to client with the result
 	gsrv := grpc.NewServer(opts...)
@@ -60,6 +94,15 @@ func newgrpcServer(config *Config) (srv *grpcServer, err error) {
 
 func (s *grpcServer) Produce(ctx context.Context, req *api.ProduceRequest) (
 	*api.ProduceResponse, error) {
+
+	if err := s.Authorizer.Authorize(
+		subject(ctx),
+		objectWildcard,
+		produceAction,
+	); err != nil {
+		return nil, err
+	}
+
 	offset, err := s.CommitLog.Append(req.Record)
 	if err != nil {
 		return nil, err
@@ -69,6 +112,15 @@ func (s *grpcServer) Produce(ctx context.Context, req *api.ProduceRequest) (
 
 func (s *grpcServer) Consume(ctx context.Context, req *api.ConsumeRequest) (
 	*api.ConsumeResponse, error) {
+
+	if err := s.Authorizer.Authorize(
+		subject(ctx),
+		objectWildcard,
+		consumeAction,
+	); err != nil {
+		return nil, err
+	}
+
 	record, err := s.CommitLog.Read(req.Offset)
 	if err != nil {
 		return nil, err
@@ -124,3 +176,38 @@ func (s *grpcServer) ConsumeStream(
 		}
 	}
 }
+
+// an interceptor that reads the subject out of the client's certificate
+// and writes it to the RPC's context.
+//
+// interceptors are used to intercept and modify each RPC call, allowing you
+// to break the request handling into smaller, reusable chunks.
+//
+// Interceptors are also known as middleware in other langauges
+func authenticate(ctx context.Context) (context.Context, error) {
+	peer, ok := peer.FromContext(ctx)
+	if !ok {
+		return ctx, status.New(
+			codes.Unknown,
+			"couldn't find peer info",
+		).Err()
+	}
+
+	if peer.AuthInfo == nil {
+		return context.WithValue(ctx, subjectContextKey{}, ""), nil
+	}
+
+	tlsInfo := peer.AuthInfo.(credentials.TLSInfo)
+	subject := tlsInfo.State.VerifiedChains[0][0].Subject.CommonName
+	ctx = context.WithValue(ctx, subjectContextKey{}, subject)
+
+	return ctx, nil
+}
+
+// returns the client's certificate's subject, so we can identify a client
+// and check their access
+func subject(ctx context.Context) string {
+	return ctx.Value(subjectContextKey{}).(string)
+}
+
+type subjectContextKey struct{}
