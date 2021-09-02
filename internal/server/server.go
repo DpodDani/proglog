@@ -6,6 +6,17 @@ import (
 	api "github.com/DpodDani/proglog/api/v1"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
+	"go.opencensus.io/plugin/ocgrpc"
+	"go.opencensus.io/stats/view"
+	"go.opencensus.io/trace"
+
+	"time"
+
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -51,20 +62,61 @@ var _ api.LogServer = (*grpcServer)(nil)
 func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (
 	*grpc.Server, error,
 ) {
-	// hook up the authenticate interceptor to our gRPC server, so that our
-	// server identifies the subject of each RPC call and kick off the
-	// authorisation process
+	logger := zap.L().Named("server")
+	zapOpts := []grpc_zap.Option{
+		// map request durations to zap fields
+		// ref: https://github.com/grpc-ecosystem/go-grpc-middleware/blob/master/logging/zap/options.go#L83
+		grpc_zap.WithDurationField(
+			func(duration time.Duration) zapcore.Field {
+				return zap.Int64(
+					"grpc.time_ns",         // zap field name
+					duration.Nanoseconds(), // value
+				)
+			},
+		),
+	}
+
+	// configure OpenCensus to always sample the traces.
+	//
+	// in prod you may not want EVERY request because it could affect
+	// performance, require too much data, or trace confidential data.
+	//
+	// probability sampler can be used to sample percentage of requests in this
+	// case.
+	// Downside: it can result in missing important requests.
+	// Resolution: write your own sampler that always traces important requests,
+	// samples percentage of other requests.
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	// views specify what stats OpenCensus will collect
+	// default views track stats on:
+	// 	1. received bytes per RPC
+	//	2. sent bytes per RPC
+	// 	3. latency
+	//	4. completed RPCs
+	err := view.Register(ocgrpc.DefaultServerViews...)
+	if err != nil {
+		return nil, err
+	}
+
+	// configure gRPC to apply Zac interceptors that log gRPC calls, and
+	// attach OpenConsensus as server's stats handler so that OpenCensus can
+	// record stats on server's request handling.
 	opts = append(opts,
 		grpc.StreamInterceptor(
 			grpc_middleware.ChainStreamServer(
+				grpc_ctxtags.StreamServerInterceptor(),
+				grpc_zap.StreamServerInterceptor(logger, zapOpts...),
 				grpc_auth.StreamServerInterceptor(authenticate),
 			),
 		),
 		grpc.UnaryInterceptor(
 			grpc_middleware.ChainUnaryServer(
+				grpc_ctxtags.UnaryServerInterceptor(),
+				grpc_zap.UnaryServerInterceptor(logger, zapOpts...),
 				grpc_auth.UnaryServerInterceptor(authenticate),
 			),
 		),
+		grpc.StatsHandler(&ocgrpc.ServerHandler{}),
 	)
 
 	// gRPC server will listen on network, handle requests, call our server,
