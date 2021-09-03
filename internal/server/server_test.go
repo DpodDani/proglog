@@ -2,9 +2,16 @@ package server
 
 import (
 	"context"
+	"flag"
 	"io/ioutil"
 	"net"
+	"os"
 	"testing"
+	"time"
+
+	"go.opencensus.io/examples/exporter"
+
+	"go.uber.org/zap"
 
 	api "github.com/DpodDani/proglog/api/v1"
 
@@ -17,6 +24,23 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
+
+var debug = flag.Bool("debug", false, "Enable observability for debugging")
+
+// when a test file implements TestMain(m *testing.M), Go will call TestMain(m)
+// instead of running the tests directly.
+// TestMain(m) gives us a place for setup that applies all tests in the file.
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if *debug {
+		logger, err := zap.NewDevelopment()
+		if err != nil {
+			panic(err)
+		}
+		zap.ReplaceGlobals(logger)
+	}
+	os.Exit(m.Run())
+}
 
 func TestServer(t *testing.T) {
 	for scenario, fn := range map[string]func(
@@ -105,6 +129,30 @@ func setupTest(t *testing.T, fn func(*Config)) (
 
 	authorizer := auth.New(config.ACLModelFile, config.ACLPolicyFile)
 
+	var telemetryExporter *exporter.LogExporter
+	if *debug {
+		// the * in the file name pattern is replaced by a random string!
+		metricsLogFile, err := ioutil.TempFile("", "metrics-*.log")
+		require.NoError(t, err)
+		t.Logf("metrics log file: %s", metricsLogFile.Name())
+
+		tracesLogFile, err := ioutil.TempFile("", "traces-*.log")
+		require.NoError(t, err)
+		t.Logf("traces log file: %s", tracesLogFile.Name())
+
+		// set up telemetry exporter to write to two files
+		// each test gets its own separate trace and metrics file, so we can
+		// see each tests's requests
+		telemetryExporter, err = exporter.NewLogExporter(exporter.Options{
+			MetricsLogFile:    metricsLogFile.Name(),
+			TracesLogFile:     tracesLogFile.Name(),
+			ReportingInterval: time.Second,
+		})
+		require.NoError(t, err)
+		err = telemetryExporter.Start()
+		require.NoError(t, err)
+	}
+
 	cfg = &Config{
 		CommitLog:  clog,
 		Authorizer: authorizer,
@@ -126,6 +174,13 @@ func setupTest(t *testing.T, fn func(*Config)) (
 		rootConn.Close()
 		nobodyConn.Close()
 		l.Close()
+		if telemetryExporter != nil {
+			// sleep for 1.5 seconds to give telemetry exporter enough time
+			// to flush data to disk
+			time.Sleep(1500 * time.Millisecond)
+			telemetryExporter.Stop()
+			telemetryExporter.Close()
+		}
 	}
 }
 
