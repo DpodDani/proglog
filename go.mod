@@ -8,6 +8,7 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
+	github.com/hashicorp/serf v0.9.5 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect
 	github.com/tysontate/gommap v0.0.0-20210506040252-ef38c88b18e1 // indirect
 	go.opencensus.io v0.23.0 // indirect
