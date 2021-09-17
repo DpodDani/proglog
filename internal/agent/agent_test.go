@@ -133,6 +133,26 @@ func TestAgent(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, consumeResponse.Record.Value, []byte("foo"))
+
+	// code below demonstrates how we can consume multiple records from the
+	// original server, because it has replicated data from another server that
+	// replicated its data from the original server, and the cycle repeats
+	// infinitely (until we call agent.Shutdown() in the deferred function)
+	//
+	// this "infinite" replication will be solved with coordination in the
+	// next chapter
+
+	// consumeResponse, err = leaderClient.Consume(
+	// 	context.Background(),
+	// 	&api.ConsumeRequest{
+	// 		Offset: produceResponse.Offset + 1,
+	// 	},
+	// )
+	// require.Nil(t, consumeResponse)
+	// require.Error(t, err)
+	// got := grpc.Code(err)
+	// want := grpc.Code(api.ErrOffsetOutOfRange{}.GRPCStatus().Err())
+	// require.Equal(t, want, got)
 }
 
 // agent argument determines which node (in our 3-node cluster) our log client
