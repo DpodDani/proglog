@@ -211,3 +211,11 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
 
 	return res, nil
 }
+
+// read records from server's log (considered "relaxed consistency" since read
+// operations don't go through Raft)
+// Strong consistency, implying up-to-date with writes, would require going
+// through Raft, but then reads are less efficient and take longer
+func (l *DistributedLog) Read(offset uint64) (*api.Record, error) {
+	return l.log.Read(offset)
+}
