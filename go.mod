@@ -3,11 +3,17 @@ module github.com/DpodDani/proglog
 go 1.16
 
 require (
+	github.com/armon/go-metrics v0.0.0-20190430140413-ec5e00d3c878 // indirect
+	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/casbin/casbin v1.9.1 // indirect
 	github.com/cloudflare/cfssl v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
+	github.com/hashicorp/go-hclog v0.9.1 // indirect
+	github.com/hashicorp/go-msgpack v0.5.5 // indirect
+	github.com/hashicorp/raft v1.3.1 // indirect
+	github.com/hashicorp/raft-boltdb v0.0.0-20210422161416-485fa74b0b01 // indirect
 	github.com/hashicorp/serf v0.9.5 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect
 	github.com/travisjeffery/go-dynaport v1.0.0 // indirect
