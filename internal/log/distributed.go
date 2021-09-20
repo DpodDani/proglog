@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -63,6 +64,7 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 
 	logConfig := l.config
 	logConfig.Segment.InitialOffset = 1 // this setting is required by Raft
+	// where Raft stores commands that need to be applied by FSM
 	logStore, err := newLogStore(logDir, logConfig)
 	if err != nil {
 		return err
@@ -174,6 +176,7 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
 	error,
 ) {
 	var buf bytes.Buffer
+	// write one byte to buffer which contains request type (uint8)
 	_, err := buf.Write([]byte{byte(reqType)})
 	if err != nil {
 		return nil, err
@@ -218,4 +221,141 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
 // through Raft, but then reads are less efficient and take longer
 func (l *DistributedLog) Read(offset uint64) (*api.Record, error) {
 	return l.log.Read(offset)
+}
+
+// provides static (compile-time) check that our fsm struct satisfies the
+// raft.FSM interface
+var _ raft.FSM = (*fsm)(nil)
+
+// Raft defers the running of the business logic to the finite-state machine,
+// also known as FSM
+// the FSM has access to our log (the "data store") and appends records to the
+// log
+//
+// if we were writing a key-value service, FSM would update the store of the
+// data, eg. a map, a Postgres database etc.
+type fsm struct {
+	log *Log // the data our FSM manages is our log
+}
+
+type RequestType uint8
+
+const (
+	AppendRequestType RequestType = 0
+)
+
+// Raft invokes this method after committing a log entry
+func (f *fsm) Apply(record *raft.Log) interface{} {
+	buf := record.Data
+	reqType := RequestType(buf[0])
+	switch reqType {
+	case AppendRequestType:
+		return f.applyAppend(buf[1:])
+	}
+	return nil
+}
+
+// unmarshal request and append record to the local log, then return the
+// response for Raft to send back to where we called raft.Apply() in
+// DistributedLog's apply() function
+func (f *fsm) applyAppend(b []byte) interface{} {
+	var req api.ProduceRequest
+	err := proto.Unmarshal(b, &req)
+	if err != nil {
+		return err
+	}
+	offset, err := f.log.Append(req.Record)
+	if err != nil {
+		return nil
+	}
+	return &api.ProduceResponse{Offset: offset}
+}
+
+// Raft periodically calls this method to snapshot its state.
+// returns an raft.FSMSnapshot that represents a PiT snapshot of the FSM's
+// state --> in our case this state is the FSM's log --> so return io.Reader
+// that will read all the log's data!
+//
+// called as per configured SnapshotInterval (how often Raft checks if it
+// should snapshot - default 2 minutes) and SnapshotThreshold (how many logs
+// since the last snapshot before making a new snapshot - default is 8192)
+func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
+	r := f.log.Reader()
+	return &snapshot{reader: r}, nil
+}
+
+// static (compile-time) check that our snapshot struct satisfies the
+// raft.FSMSnapshot interface
+var _ raft.FSMSnapshot = (*snapshot)(nil)
+
+// serves two purposes:
+// 1) allow Raft to compact its log so it doesn't store logs whose commands
+// 	  Raft has already applied
+// 2) allow Raft to bootstrap new servers more efficiently than if leader had
+//    to replicate its entire log again and again
+type snapshot struct {
+	reader io.Reader
+}
+
+// Raft calls Persist() on FSMSnapshot to write its state to some sink
+// (somewhere to store the bytes in)
+// sink could be in-memory, a file, S3 bucket etc. - depends on snapshot store
+// configured for Raft
+// we configured our Raft to use a file snapshot store, so when the snapshot
+// completes, we'll have a file containing all the Raft's log data
+//
+// a shared state store such as S3 would put the burden of writing/reading
+// snapshot on S3, rather than the leader, thereby allowing new servers to
+// restore snapshots without streaming from the leader
+func (s *snapshot) Persist(sink raft.SnapshotSink) error {
+	if _, err := io.Copy(sink, s.reader); err != nil {
+		_ = sink.Cancel()
+		return err
+	}
+	return sink.Close()
+}
+
+// Raft calls Release() when it has finished with the snapshot
+func (s *snapshot) Release() {}
+
+// Raft calls this to restore a FSM from a snapshot
+func (f *fsm) Restore(r io.ReadCloser) error {
+	b := make([]byte, lenWidth)
+	var buf bytes.Buffer
+	for i := 0; ; i++ {
+		_, err := io.Reader(r, b)
+
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+
+		// number of bytes to read record data
+		size := int64(enc.Uint64(b))
+		if _, err = io.CopyN(&buf, r, size); err != nil {
+			return err
+		}
+		record := &api.Record{}
+		if err = proto.Unmarshal(buf.Bytes(), record); err != nil {
+			return err
+		}
+
+		// reset log and configure its initial offset to the 1st record we read
+		// from the snapshot so the log's offset match.
+		if i == 0 {
+			f.log.Config.Segment.InitialOffset = record.Offset
+			if err := f.log.Reset(); err != nil {
+				return err
+			}
+		}
+
+		// then we read records in the snapshot and append them to our new log
+		if _, err = f.log.Append(record); err != nil {
+			return err
+		}
+
+		buf.Reset()
+	}
+	return nil
 }
