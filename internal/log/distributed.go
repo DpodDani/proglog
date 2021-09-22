@@ -193,8 +193,8 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
 	}
 
 	timeout := 10 * time.Second
-	// replicates the record and appends it to the lader's log
-	// the "record" includes the api.Record data and the request type
+	// replicates the record and appends it to the leader's log
+	// the "record" includes the request type followed by the api.Record data
 	future := l.raft.Apply(buf.Bytes(), timeout)
 	// future.Error() returns an error if something went wrong with replication
 	// for example: it took too long for Raft to process the command, or the
@@ -245,6 +245,7 @@ const (
 )
 
 // Raft invokes this method after committing a log entry
+// *raft.Log comes from Raft's managed log store
 func (f *fsm) Apply(record *raft.Log) interface{} {
 	buf := record.Data
 	reqType := RequestType(buf[0])
@@ -358,4 +359,66 @@ func (f *fsm) Restore(r io.ReadCloser) error {
 		buf.Reset()
 	}
 	return nil
+}
+
+// static (compile-time) check that logStore satisfies raft.LogStore interface
+var _ raft.LogStore = (*logStore)(nil)
+
+// where Raft stores the commands
+// an API wrapper around our Log data structure (created in the first few
+// chapters) to satisfy the raft.LogStore interface
+type logStore struct {
+	*Log
+}
+
+func newLogStore(dir string, c Config) (*logStore, error) {
+	log, err := NewLog(dir, c)
+	if err != nil {
+		return nil
+	}
+	return &logStore{log}, nil
+}
+
+func (l *logStore) FirstIndex() (uint64, error) {
+	return l.LowestOffset()
+}
+
+func (l *logStore) LastIndex() (uint64, error) {
+	return l.HighestOffset()
+}
+
+func (l *logStore) GetLog(index uint64, out *raft.Log) error {
+	in, err := l.Read(index)
+	if err != nil {
+		return err
+	}
+
+	out.Data = in.Value
+	out.Index = in.Offset // what we call offset, Raft calls index
+	out.Type = raft.LogType(in.Type)
+	out.Term = in.Term
+
+	return nil
+}
+
+func (l *logStore) StoreLog(record *api.Record) error {
+	return l.StoreLogs([]*raft.Log{record})
+}
+
+func (l *logStore) StoreLogs(records []raft.Log) error {
+	for _, record := range records {
+		if _, err := l.Append(&api.Record{
+			Value: record.Data,
+			Term:  record.Term,
+			Type:  uint32(record.Type),
+		}); err != nil {
+			return nil
+		}
+	}
+	return nil
+}
+
+// used to remove records that are old or stored in snapshot
+func (l *logStore) DeleteRange(min, max uint64) error {
+	return l.Truncate(max)
 }
