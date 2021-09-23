@@ -198,6 +198,7 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
 	timeout := 10 * time.Second
 	// replicates the record and appends it to the leader's log
 	// the "record" includes the request type followed by the api.Record data
+	// returns a "future" that can be used to wait on the application
 	future := l.raft.Apply(buf.Bytes(), timeout)
 	// future.Error() returns an error if something went wrong with replication
 	// for example: it took too long for Raft to process the command, or the
@@ -224,6 +225,51 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
 // through Raft, but then reads are less efficient and take longer
 func (l *DistributedLog) Read(offset uint64) (*api.Record, error) {
 	return l.log.Read(offset)
+}
+
+// adds server to Raft cluster
+// we add every server as a voter, but Raft allows us to add servers as non-
+// voters too (using AddNonVoter())
+// non-voters are useful if you just want to replicate state to them, and have
+// them act as read-only eventually consistent state
+//
+// each time you add more voter servers, you increase the probability that
+// replications and elections take longer, because the leader has more servers
+// that it needs to communicate with to reach a majority!
+func (l *DistributedLog) Join(id, addr string) error {
+	configFuture := l.raft.GetConfiguration()
+	if err := configFuture.Error(); err != nil {
+		return err
+	}
+
+	serverID := raft.ServerID(id)
+	serverAddr := raft.ServerAddress(addr)
+	for _, srv := range configFuture.Configuration().Servers {
+		if srv.ID == serverID || srv.Address == serverAddr {
+			if srv.ID == serverID && srv.Address == serverAddr {
+				// server has already joined
+				return nil
+			}
+			// remove existing server
+			removeFuture := l.raft.RemoveServer(serverID, 0, 0)
+			if err := removeFuture.Error(); err != nil {
+				return err
+			}
+		}
+	}
+
+	addFuture := l.raft.AddVoter(serverID, serverAddr, 0, 0)
+	if err := addFuture.Error(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// fun fact: removing the leader from the Raft cluster will trigger an election
+func (l *DistributedLog) Leave(id string) error {
+	removeFuture := l.raft.RemoveServer(raft.ServerID(id), 0, 0)
+	return removeFuture.Error()
 }
 
 // provides static (compile-time) check that our fsm struct satisfies the
