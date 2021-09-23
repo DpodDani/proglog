@@ -2,7 +2,10 @@ package log
 
 import (
 	"bytes"
+	"crypto/tls"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -187,7 +190,7 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (
 		return nil, err
 	}
 
-	_, err := buf.Write(b)
+	_, err = buf.Write(b)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +327,7 @@ func (f *fsm) Restore(r io.ReadCloser) error {
 	b := make([]byte, lenWidth)
 	var buf bytes.Buffer
 	for i := 0; ; i++ {
-		_, err := io.Reader(r, b)
+		_, err := io.ReadFull(r, b)
 
 		if err == io.EOF {
 			break
@@ -374,7 +377,7 @@ type logStore struct {
 func newLogStore(dir string, c Config) (*logStore, error) {
 	log, err := NewLog(dir, c)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	return &logStore{log}, nil
 }
@@ -401,11 +404,11 @@ func (l *logStore) GetLog(index uint64, out *raft.Log) error {
 	return nil
 }
 
-func (l *logStore) StoreLog(record *api.Record) error {
+func (l *logStore) StoreLog(record *raft.Log) error {
 	return l.StoreLogs([]*raft.Log{record})
 }
 
-func (l *logStore) StoreLogs(records []raft.Log) error {
+func (l *logStore) StoreLogs(records []*raft.Log) error {
 	for _, record := range records {
 		if _, err := l.Append(&api.Record{
 			Value: record.Data,
@@ -421,4 +424,89 @@ func (l *logStore) StoreLogs(records []raft.Log) error {
 // used to remove records that are old or stored in snapshot
 func (l *logStore) DeleteRange(min, max uint64) error {
 	return l.Truncate(max)
+}
+
+// static (compile-time) check that our StreamLayer struct satisfies Raft's
+// StreamLayer interface
+var _ raft.StreamLayer = (*StreamLayer)(nil)
+
+type StreamLayer struct {
+	ln              net.Listener
+	serverTLSConfig *tls.Config // used to accept incoming connections
+	peerTLSConfig   *tls.Config // used to create outgoing connections
+}
+
+func NewStreamLayer(
+	ln net.Listener,
+	serverTLSConfig,
+	peerTLSConfig *tls.Config,
+) *StreamLayer {
+	return &StreamLayer{
+		ln:              ln,
+		serverTLSConfig: serverTLSConfig,
+		peerTLSConfig:   peerTLSConfig,
+	}
+}
+
+const RaftRPC = 1
+
+// makes outgoing connections to other servers in Raft cluster
+// when we connect to a server, we write the RaftRPC byte to identify the
+// connection type so we can multiplex Raft on the same port as our Log gRPC
+// request
+func (s *StreamLayer) Dial(
+	addr raft.ServerAddress,
+	timeout time.Duration,
+) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: timeout}
+	var conn, err = dialer.Dial("tcp", string(addr))
+	if err != nil {
+		return nil, err
+	}
+
+	// indicate to mux that this is a raft RPC
+	_, err = conn.Write([]byte{byte(RaftRPC)})
+	if err != nil {
+		return nil, err
+	}
+
+	if s.peerTLSConfig != nil {
+		conn = tls.Client(conn, s.peerTLSConfig)
+	}
+
+	return conn, err
+}
+
+// a mirror of Dial() - accept the incoming connection and read the byte that
+// identifies the connection, then create server-side TLS connection
+func (s *StreamLayer) Accept() (net.Conn, error) {
+	conn, err := s.ln.Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	b := make([]byte, 1)
+	_, err = conn.Read(b)
+	if err != nil {
+		return nil, err
+	}
+
+	if bytes.Compare([]byte{byte(RaftRPC)}, b) != 0 {
+		return nil, fmt.Errorf("not a raft rpc")
+	}
+
+	if s.serverTLSConfig != nil {
+		return tls.Server(conn, s.serverTLSConfig), nil
+	}
+
+	return conn, nil
+}
+
+func (s *StreamLayer) Close() error {
+	return s.ln.Close()
+}
+
+// returns listener's address
+func (s *StreamLayer) Addr() net.Addr {
+	return s.ln.Addr()
 }
