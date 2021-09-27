@@ -1,11 +1,16 @@
 package agent
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"sync"
+	"time"
 
+	"github.com/hashicorp/raft"
+	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
 
 	api "github.com/DpodDani/proglog/api/v1"
@@ -22,10 +27,10 @@ import (
 type Agent struct {
 	Config
 
-	log        *log.Log
+	mux        cmux.CMux // multiplexer for network connections
+	log        *log.DistributedLog
 	server     *grpc.Server
 	membership *discovery.Membership
-	replicator *log.Replicator
 
 	shutdown     bool
 	shutdowns    chan struct{}
@@ -44,6 +49,7 @@ type Config struct {
 	StartJoinAddrs  []string
 	ACLModelFile    string
 	ACLPolicyFile   string
+	Bootstrap       bool
 }
 
 func (c Config) RPCAddr() (string, error) {
@@ -64,6 +70,7 @@ func New(config Config) (*Agent, error) {
 
 	setup := []func() error{
 		a.setupLogger,
+		a.setupMux,
 		a.setupLog,
 		a.setupServer,
 		a.setupMembership,
@@ -87,12 +94,65 @@ func (a *Agent) setupLogger() error {
 	return nil
 }
 
-func (a *Agent) setupLog() error {
-	var err error
-	a.log, err = log.NewLog(
-		a.Config.DataDir,
-		log.Config{},
+// creates listener on our RPC address that'll accept both Raft and gRPC
+// connections. Then create mux with the listener, which will accept
+// connections on that listener, and match connections based on configured
+// rules.
+func (a *Agent) setupMux() error {
+	rpcAddr := fmt.Sprintf(
+		":%d",
+		a.Config.RPCPort,
 	)
+
+	ln, err := net.Listen("tcp", rpcAddr)
+	if err != nil {
+		return err
+	}
+
+	a.mux = cmux.New(ln)
+	return nil
+}
+
+func (a *Agent) setupLog() error {
+	// configure the mux that matches Raft connections
+	// Raft connections are identified by reading one byte and checking it
+	// matches the RaftRPC byte (declared in distributed.go) that's written
+	// to the StreamLayer
+	//
+	// if mux identifies this rule, it will pass connection to the raftLn
+	// Listener for Raft to handle the connection
+	raftLn := a.mux.Match(func(reader io.Reader) bool {
+		b := make([]byte, 1)
+		if _, err := reader.Read(b); err != nil {
+			return false
+		}
+		return bytes.Compare(b, []byte{byte(log.RaftRPC)}) == 0
+	})
+
+	logConfig := log.Config{}
+	// configure the DistributedLog's Raft to use the multiplexed listener
+	logConfig.Raft.StreamLayer = log.NewStreamLayer(
+		raftLn,
+		a.Config.ServerTLSConfig,
+		a.Config.PeerTLSConfig,
+	)
+	logConfig.Raft.LocalID = raft.ServerID(a.Config.NodeName)
+	logConfig.Raft.Bootstrap = a.Config.Bootstrap
+
+	var err error
+	a.log, err = log.NewDistributedLog(
+		a.Config.DataDir,
+		logConfig,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if a.Config.Bootstrap {
+		err = a.log.WaitForLeader(3 * time.Second)
+	}
+
 	return err
 }
 
