@@ -79,6 +79,7 @@ func TestAgent(t *testing.T) {
 				StartJoinAddrs:  startJoinAddrs,
 				ACLModelFile:    config.ACLModelFile,
 				ACLPolicyFile:   config.ACLPolicyFile,
+				Bootstrap:       i == 0,
 			},
 		)
 		require.NoError(t, err)
@@ -142,17 +143,17 @@ func TestAgent(t *testing.T) {
 	// this "infinite" replication will be solved with coordination in the
 	// next chapter
 
-	// consumeResponse, err = leaderClient.Consume(
-	// 	context.Background(),
-	// 	&api.ConsumeRequest{
-	// 		Offset: produceResponse.Offset + 1,
-	// 	},
-	// )
-	// require.Nil(t, consumeResponse)
-	// require.Error(t, err)
-	// got := grpc.Code(err)
-	// want := grpc.Code(api.ErrOffsetOutOfRange{}.GRPCStatus().Err())
-	// require.Equal(t, want, got)
+	consumeResponse, err = leaderClient.Consume(
+		context.Background(),
+		&api.ConsumeRequest{
+			Offset: produceResponse.Offset + 1,
+		},
+	)
+	require.Nil(t, consumeResponse)
+	require.Error(t, err)
+	got := grpc.Code(err)
+	want := grpc.Code(api.ErrOffsetOutOfRange{}.GRPCStatus().Err())
+	require.Equal(t, want, got)
 }
 
 // agent argument determines which node (in our 3-node cluster) our log client
