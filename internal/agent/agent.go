@@ -13,7 +13,6 @@ import (
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
 
-	api "github.com/DpodDani/proglog/api/v1"
 	"github.com/DpodDani/proglog/internal/auth"
 	"github.com/DpodDani/proglog/internal/discovery"
 	"github.com/DpodDani/proglog/internal/log"
@@ -82,7 +81,16 @@ func New(config Config) (*Agent, error) {
 		}
 	}
 
+	go a.serve() // tell mux to serve connections
+
 	return a, nil
+}
+
+func (a *Agent) serve() error {
+	if err := a.mux.Serve(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (a *Agent) setupLogger() error {
@@ -197,27 +205,9 @@ func (a *Agent) setupMembership() error {
 		return err
 	}
 
-	var opts []grpc.DialOption
-	if a.Config.PeerTLSConfig != nil {
-		opts = append(opts, grpc.WithTransportCredentials(
-			credentials.NewTLS(a.Config.PeerTLSConfig),
-		))
-	}
-
-	conn, err := grpc.Dial(rpcAddr, opts...)
-	if err != nil {
-		return err
-	}
-
-	client := api.NewLogClient(conn)
-	a.replicator = &log.Replicator{
-		DialOptions: opts,   // to connect to other server for replication
-		LocalServer: client, // to save copy of what's being replicated
-	}
-
-	// pass Replicator to Membership (Serf wrapper) to notify replicator when
-	// new servers join/leave cluster
-	a.membership, err = discovery.New(a.replicator, discovery.Config{
+	// membership now tells the DistributedLog when servers join/leave cluster
+	// replication is now handled by Raft
+	a.membership, err = discovery.New(a.log, discovery.Config{
 		NodeName: a.Config.NodeName,
 		BindAddr: a.Config.BindAddr,
 		Tags: map[string]string{
@@ -242,7 +232,6 @@ func (a *Agent) Shutdown() error {
 
 	shutdown := []func() error{
 		a.membership.Leave, // leave Serf cluster
-		a.replicator.Close, // stop replicating
 		func() error {
 			a.server.GracefulStop() // stops server from receiving new requests
 			return nil
