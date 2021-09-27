@@ -179,6 +179,8 @@ func (a *Agent) setupServer() error {
 		return err
 	}
 
+	// we use cmux.Any() because we know all other connections must be gRPC
+	// connections (because we have a dedicated mux rule for Raft connections)
 	grpcLn := a.mux.Match(cmux.Any())
 
 	go func() {
