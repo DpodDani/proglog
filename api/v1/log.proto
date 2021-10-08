@@ -19,6 +19,8 @@ service Log {
     rpc ConsumeStream(ConsumeRequest) returns (stream ConsumeResponse) {}
     // bidirectional streaming where client and server send sequence of messages
     rpc ProduceStream(stream ProduceRequest) returns (stream ProduceResponse) {}
+    // get cluster's servers
+    rpc GetServers(GetServersRequest) returns (GetServersResponse) {}
 }
 
 message ProduceRequest {
@@ -35,4 +37,18 @@ message ConsumeRequest {
 
 message ConsumeResponse {
     Record record = 2;
+}
+
+message GetServersRequest {}
+
+message GetServersResponse {
+    repeated Server servers = 1;
+}
+
+// this information should tell picker what server to send the produce calls
+// to and what servers to send consume calls to
+message Server {
+    string id = 1;
+    string rpc_addr = 2; // server addresses that client should connect to
+    bool is_leader = 3;
 }
