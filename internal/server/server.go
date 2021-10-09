@@ -36,8 +36,9 @@ type Authorizer interface {
 }
 
 type Config struct {
-	CommitLog  CommitLog
-	Authorizer Authorizer
+	CommitLog   CommitLog
+	Authorizer  Authorizer
+	GetServerer GetServerer
 }
 
 // these constants match the values in our policy.csv file
@@ -227,6 +228,26 @@ func (s *grpcServer) ConsumeStream(
 			req.Offset++
 		}
 	}
+}
+
+func (s *grpcServer) GetServers(
+	ctx context.Context, req *api.GetServersRequest,
+) (
+	*api.GetServersResponse, error,
+) {
+	servers, err := s.GetServerer.GetServers()
+	if err != nil {
+		return nil, err
+	}
+	return &api.GetServersResponse{Servers: servers}, nil
+}
+
+// create new interface for the GetServers() function, rather than adding it
+// to the CommitLog interface, because not every Log that satisfies the
+// CommitLog interface has the GetServers() function (for example our regular
+// log structure created early on in the book!)
+type GetServerer interface {
+	GetServers() ([]*api.Server, error)
 }
 
 // an interceptor that reads the subject out of the client's certificate
