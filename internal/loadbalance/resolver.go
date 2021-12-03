@@ -112,6 +112,7 @@ func (r *Resolver) ResolveNow(resolver.ResolveNowOptions) {
 			"failed to resolve server",
 			zap.Error(err),
 		)
+		return
 	}
 
 	var addrs []resolver.Address
