@@ -89,7 +89,7 @@ func setupFlags(cmd *cobra.Command) error {
 		"",
 		"Path to peer certificate authority")
 
-	return viper.BindFlags(cmd.Flags())
+	return viper.BindPFlags(cmd.Flags())
 }
 
 // reads configuration and prepares the agent's configuration
@@ -165,5 +165,5 @@ func (c *cli) run(cmd *cobra.Command, args []string) error {
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
 	<-sigc
 	// shut down agent gracefully when operating system terminates program
-	agent.ShutDown()
+	return agent.Shutdown()
 }

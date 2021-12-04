@@ -54,3 +54,8 @@ ${CONFIG_PATH}/policy.csv:
 test: ${CONFIG_PATH}/model.conf ${CONFIG_PATH}/policy.csv
 	# go test -race ./...
 	go test -race -v ./internal/...
+
+TAG ?= 0.0.1
+
+build-docker:
+	docker build -t github.com/dpoddani/proglog:$(TAG) .
