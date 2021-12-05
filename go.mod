@@ -22,6 +22,7 @@ require (
 	github.com/tysontate/gommap v0.0.0-20210506040252-ef38c88b18e1 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/zap v1.19.0 // indirect
+	google.golang.org/genproto v0.0.0-20211203200212-54befc351ae9 // indirect
 	google.golang.org/grpc v1.40.0 // indirect
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.1.0 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
