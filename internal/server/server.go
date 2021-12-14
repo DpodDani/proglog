@@ -20,8 +20,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // have service depend on an interface rather than a concrete implementation
@@ -123,6 +126,16 @@ func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (
 	// gRPC server will listen on network, handle requests, call our server,
 	// and respond to client with the result
 	gsrv := grpc.NewServer(opts...)
+
+	// create service that supports health check protocol
+	hsrv := health.NewServer()
+	// set serving status to SERVING so that probe knows service is alive
+	// and ready to accept connections
+	hsrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	// register this service with our server, so gRPC can call this service's
+	// endpoints
+	healthpb.RegisterHealthServer(gsrv, hsrv)
+
 	srv, err := newgrpcServer(config)
 	if err != nil {
 		return nil, err

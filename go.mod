@@ -14,6 +14,7 @@ require (
 	github.com/hashicorp/raft v1.3.1 // indirect
 	github.com/hashicorp/raft-boltdb v0.0.0-20210422161416-485fa74b0b01 // indirect
 	github.com/hashicorp/serf v0.9.5 // indirect
+	github.com/miekg/dns v1.1.26 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/cobra v1.2.1 // indirect
 	github.com/spf13/viper v1.9.0 // indirect

@@ -152,8 +152,11 @@ func (l *DistributedLog) setupRaft(dataDir string) error {
 	if l.config.Raft.Bootstrap && !hasState {
 		config := raft.Configuration{
 			Servers: []raft.Server{{
-				ID:      config.LocalID,
-				Address: transport.LocalAddr(),
+				ID: config.LocalID,
+				// use fully qualified domain name rather than transport's
+				// local address, so node will properly advertise itself to
+				// its cluster and clients
+				Address: raft.ServerAddress(l.config.Raft.BindAddr),
 			}},
 		}
 		err = l.raft.BootstrapCluster(config).Error()
