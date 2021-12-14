@@ -1,15 +1,30 @@
+# service template
+# defines our "headless" Service --> doesn't load balance to a single IP
+# you use a headless service when your distributed Service has its own means
+# for service discovery
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "proglog.fullname" . }}
-  labels:
-    {{- include "proglog.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{ include "proglog.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  clusterIP: None
+  publishNotReadyAddresses: true
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: http
-      protocol: TCP
-      name: http
-  selector:
-    {{- include "proglog.selectorLabels" . | nindent 4 }}
+    - name: rpc
+      port: {{ .Values.rpcPort }}
+      targetPort: {{ .Values.rpcPort }}
+    - name: serf-tcp
+      protocol: "TCP"
+      port: {{ .Values.serfPort }}
+      targetPort: {{ .Values.sertPort }}
+    - name: serf-udp
+      protocol: "UDP"
+      port: {{ .Values.sertPort }}
+      targetPort: {{ .Values.serfPort }}
+    # by defining selectors on our Service, Kubernetes' endpoint controller
+    # changes the DNS configuration to return records that point to the Pods
+    # backing the Service --> each pod will get its own DNS record, and the
+    # servers will use these recods to discover each other!
+    selector: {{ include "proglog.selectorLabels" . | nindent 4 }}

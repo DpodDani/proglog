@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "proglog.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{ include "proglog.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{ include "proglog.selectorLabels" . | nindent 6 }}
+  serviceName: {{ include "proglog.fullname" . }}
+  replicas: {{ .Values.replicas }}
+  template:
+    metadata:
+      name: {{ include "proglog.fullname" . }}
+      labels: {{ include "proglog.labels" . | nindent 8 }}
+    spec:
+      # sets up configuration file
+      # we configure the 1st server to bootstrap the Raft cluster
+      # then we configure subsequent servers to join the cluster
+      # we mount the datadir volume into the container so we can write to the
+      # same configuration file our app container will read from later.
+      initContainers:
+      - name: {{ include "proglog.fullname" . }}-config-init
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/sh
+          - -c
+          - |-
+            ID=$(echo $HOSTNAME | rev | cut -d- -f1 | rev)
+            cat > /var/run/proglog/config.yaml <<EOD
+            data-dir: /var/run/proglog/data
+            rpc-port: {{ .Values.rpcPort }}
+            bind-addr: "$HOSTNAME.proglog.{{.Release.Namespace}}.\svc.cluster.local:{{.Values.serfPort}}"
+            bootstrap: $([ $ID = 0 ] && echo true || echo false) $([ $ID != 0 ]) && echo 'start-join-addrs: "proglog-0.proglog.{{.Release.Namespace}}.svc.cluster.local:{{.Values.serfPort}}"')
+            EOD
+        volumeMounts:
+          - name: dataDir
+          mountPath: /var/run/proglog
+      containers:
+        - name: {{ include "proglog.fullname" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+          - containerPort: {{ .Values.rpcPort }}
+            name: rpc
+          - containerPort: {{ .Values.serfPort }}
+            name: serf
+          args:
+            # use a flag to tell our service where to find its configuration
+            # file
+            - --config-file=/var/run/proglog/config.yaml
+          # Kubernetes uses probes to know whether it needs to act on container
+          # to improve service's reliability. Usually the probe requests a
+          # health check endpoint that responds with the health of the service.
+          readinessProbe:
+            exec:
+              command: ["/bin/grpc_health_probe", "-addr=:{{ .Values.rpcPort }}"]
+            initialDelaySeconds: 10
+          livenessProb:
+            exec:
+              command: ["/bin/grpc_health_probe", "-addr=:{{ .Values.rpcPort }}"]
+            initialDelaySeconds: 10
+          # mount volume to the container for reading the configuration file
+          # and persisting the log
+          volumneMounts:
+          - name: datadir
+            mountPath: /var/run/proglog
+  # this claim requests storage for our cluster
+  # based on configuration, Kubernetes can fulfil the claim with local disk,
+  # disk provided by cloud provider etc.
+  # Kubernetes takes care of obtaining and binding the storage to containers
+  volumeClaimTemplates:
+    - metadata:
+      name: dataDir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ .Values.storage }}
