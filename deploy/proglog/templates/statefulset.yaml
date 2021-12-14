@@ -36,7 +36,7 @@ spec:
             EOD
         volumeMounts:
           - name: dataDir
-          mountPath: /var/run/proglog
+            mountPath: /var/run/proglog
       containers:
         - name: {{ include "proglog.fullname" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -71,9 +71,9 @@ spec:
   # Kubernetes takes care of obtaining and binding the storage to containers
   volumeClaimTemplates:
     - metadata:
-      name: dataDir
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      resources:
-        requests:
-          storage: {{ .Values.storage }}
+        name: dataDir
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ .Values.storage }}

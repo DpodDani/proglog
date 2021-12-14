@@ -23,8 +23,8 @@ spec:
       protocol: "UDP"
       port: {{ .Values.sertPort }}
       targetPort: {{ .Values.serfPort }}
-    # by defining selectors on our Service, Kubernetes' endpoint controller
-    # changes the DNS configuration to return records that point to the Pods
-    # backing the Service --> each pod will get its own DNS record, and the
-    # servers will use these recods to discover each other!
-    selector: {{ include "proglog.selectorLabels" . | nindent 4 }}
+  # by defining selectors on our Service, Kubernetes' endpoint controller
+  # changes the DNS configuration to return records that point to the Pods
+  # backing the Service --> each pod will get its own DNS record, and the
+  # servers will use these recods to discover each other!
+  selector: {{ include "proglog.selectorLabels" . | nindent 4 }}
