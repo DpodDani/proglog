@@ -78,3 +78,33 @@ protocol.
 
 gRPC conventionally uses a grpc_health_probe command that expects your
 server to satisfy gRPC health checking protocol.
+
+===============================================================================
+
+Kubernetes services --> exposes an application as a network service.
+You define a Service with policies that specify what Pods the Service applies
+to and how to access the Pods.
+
+Four types of services specify how the Service exposes the Pods:
+1) ClusterIP --> exposes the Service on a load-balanced cluster-internal IP so
+the Service is reachable within Kubernetes cluster only <-- this is the default
+Service type.
+
+2) NodePort --> exposes Service on each Node's IP on static port - even if Node
+doesn't have Pod on it. Kubernetes still sets up routing so if you request a
+Node at the service's port, it'll direct request to the proper place.
+You can request NodePort services outside the Kubernetes cluster!
+(Remember, a Node is a physical host, whereas a Pod is a logical host - so
+multiple Pods can run on a single Node!)
+
+3) LoadBalancer --> exposes the Service externally using cloud provider's load
+balancer. This type of Service automatically creates ClusterIP and NodeIP
+services behind the scenes, and manages the routes to these services.
+
+4) ExternalName --> special Service that serves as way to alias a DNS name.
+
+Travis doesn't recommend using NodePort services (directly) because you then
+have to know your nodes' IPs to use the services, must secure all your Nodes,
+and have to deal with port conflicts.
+Instead, he recommends using a LoadBalancer/ClusterIP service if you're able
+to run a Pod that can access your internal network.
