@@ -12,6 +12,12 @@ COPY . .
 # this allows them to run in the scratch image (below) which doesn't contain
 # the system libraries needed to run dynamically
 RUN CGO_ENABLED=0 go build -o /go/bin/proglog ./cmd/proglog
+# install grpc_health_probe executable in image
+RUN GRPC_HEALTH_PROBE_VERSION=v0.3.2 && \
+wget -qO/go/bin/grpc_health_probe \
+https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/\
+${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-amd64 && \
+chmod +x /go/bin/grpc_health_probe
 
 # this stage runs our service
 # the scratch empty image is the smallest Docker image!
@@ -23,4 +29,5 @@ RUN CGO_ENABLED=0 go build -o /go/bin/proglog ./cmd/proglog
 FROM scratch
 # copy our binary into this scratch image, and this is the image we deploy!
 COPY --from=build /go/bin/proglog /bin/proglog
+copy --from=build /go/bin/grpc_health_probe /bin/grpc_health_probe
 ENTRYPOINT ["/bin/proglog"]
