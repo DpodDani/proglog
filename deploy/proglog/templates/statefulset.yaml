@@ -31,12 +31,12 @@ spec:
             cat > /var/run/proglog/config.yaml <<EOD
             data-dir: /var/run/proglog/data
             rpc-port: {{ .Values.rpcPort }}
-            bind-addr: "$HOSTNAME.proglog.{{.Release.Namespace}}.\svc.cluster.local:{{.Values.serfPort}}"
+            bind-addr: "$HOSTNAME.proglog.{{.Release.Namespace}}.svc.cluster.local:{{.Values.serfPort}}"
             bootstrap: $([ $ID = 0 ] && echo true || echo false) $([ $ID != 0 ]) && echo 'start-join-addrs: "proglog-0.proglog.{{.Release.Namespace}}.svc.cluster.local:{{.Values.serfPort}}"')
             EOD
         volumeMounts:
-          - name: dataDir
-            mountPath: /var/run/proglog
+        - name: dataDir
+          mountPath: /var/run/proglog
       containers:
         - name: {{ include "proglog.fullname" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -56,13 +56,13 @@ spec:
             exec:
               command: ["/bin/grpc_health_probe", "-addr=:{{ .Values.rpcPort }}"]
             initialDelaySeconds: 10
-          livenessProb:
+          livenessProbe:
             exec:
               command: ["/bin/grpc_health_probe", "-addr=:{{ .Values.rpcPort }}"]
             initialDelaySeconds: 10
           # mount volume to the container for reading the configuration file
           # and persisting the log
-          volumneMounts:
+          volumeMounts:
           - name: datadir
             mountPath: /var/run/proglog
   # this claim requests storage for our cluster
@@ -70,10 +70,10 @@ spec:
   # disk provided by cloud provider etc.
   # Kubernetes takes care of obtaining and binding the storage to containers
   volumeClaimTemplates:
-    - metadata:
-        name: dataDir
-      spec:
-        accessModes: [ "ReadWriteOnce" ]
-        resources:
-          requests:
-            storage: {{ .Values.storage }}
+  - metadata:
+      name: dataDir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: {{ .Values.storage }}
